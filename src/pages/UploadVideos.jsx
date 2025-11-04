@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 
@@ -8,7 +8,7 @@ export default function UploadVideos() {
         file: null,
         filename: '',
         status: 'inventory',
-        category: 'FigureIt',
+        selectedCategories: [],
         title: '',
         description: '',
         price: ''
@@ -16,7 +16,24 @@ export default function UploadVideos() {
     const [preview, setPreview] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
+    const [categories, setCategories] = useState([]);
+    const [showAddCategory, setShowAddCategory] = useState(false);
+    const [newCategory, setNewCategory] = useState('');
+    const [addingCategory, setAddingCategory] = useState(false);
 
+    useEffect(() => {
+        fetchCategories();
+    }, []);
+
+    const fetchCategories = async () => {
+        const { data, error } = await supabase
+            .from('categories')
+            .select('id, category')
+            .order('created_at', { ascending: true });
+        if (!error && data) {
+            setCategories(data);
+        }
+    };
     const handleFileChange = (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -46,6 +63,70 @@ export default function UploadVideos() {
         setFormData({ ...formData, [name]: value });
     };
 
+    const handleCategoryChange = (e) => {
+        if (e.target.value === '__add__') {
+            setShowAddCategory(true);
+        } else {
+            // Toggle category selection
+            const categoryId = e.target.value;
+            setFormData(prev => {
+                const isSelected = prev.selectedCategories.includes(categoryId);
+                return {
+                    ...prev,
+                    selectedCategories: isSelected
+                        ? prev.selectedCategories.filter(id => id !== categoryId)
+                        : [...prev.selectedCategories, categoryId]
+                };
+            });
+        }
+    };
+
+    const removeCategory = (categoryId) => {
+        setFormData(prev => ({
+            ...prev,
+            selectedCategories: prev.selectedCategories.filter(id => id !== categoryId)
+        }));
+    };
+
+    const handleAddCategory = async (e) => {
+        e.preventDefault();
+        if (!newCategory.trim()) return;
+        setAddingCategory(true);
+
+        try {
+            console.log('Adding category:', { user_id: user.id, category: newCategory.trim() });
+
+            const { data, error } = await supabase
+                .from('categories')
+                .insert({ user_id: user.id, category: newCategory.trim() })
+                .select();
+
+            console.log('Add category result:', { data, error });
+
+            if (error) {
+                console.error('Error adding category:', error);
+                setMessage({ type: 'error', text: `Failed to add category: ${error.message}` });
+            } else {
+                setNewCategory('');
+                setShowAddCategory(false);
+                await fetchCategories();
+                // Auto-select the newly added category
+                if (data && data[0]) {
+                    setFormData(prev => ({
+                        ...prev,
+                        selectedCategories: [...prev.selectedCategories, data[0].id]
+                    }));
+                }
+                setMessage({ type: 'success', text: 'Category added successfully!' });
+            }
+        } catch (err) {
+            console.error('Exception adding category:', err);
+            setMessage({ type: 'error', text: 'Failed to add category. Please try again.' });
+        } finally {
+            setAddingCategory(false);
+        }
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setMessage({ type: '', text: '' });
@@ -57,6 +138,10 @@ export default function UploadVideos() {
         }
         if (!formData.title) {
             setMessage({ type: 'error', text: 'Please enter a display title' });
+            return;
+        }
+        if (formData.selectedCategories.length === 0) {
+            setMessage({ type: 'error', text: 'Please select at least one category' });
             return;
         }
 
@@ -83,19 +168,20 @@ export default function UploadVideos() {
                 .getPublicUrl(filePath);
 
             // Insert asset metadata into database
-            const { error: dbError } = await supabase
+            const { data: assetData, error: dbError } = await supabase
                 .from('assets')
                 .insert({
                     user_id: user.id,
                     filename: formData.filename,
                     asset_type: 'video',
                     asset_status: formData.status,
-                    category: formData.category,
                     title: formData.title,
                     description: formData.description,
                     price: formData.price ? parseFloat(formData.price) : null,
                     asset_url: urlData.publicUrl
-                });
+                })
+                .select()
+                .single();
 
             if (dbError) {
                 // If database insert fails, try to delete the uploaded file
@@ -103,14 +189,30 @@ export default function UploadVideos() {
                 throw dbError;
             }
 
-            setMessage({ type: 'success', text: 'Video uploaded successfully!' });
+            // Insert asset-category associations
+            const assetCategoryInserts = formData.selectedCategories.map(categoryId => ({
+                asset_id: assetData.id,
+                category_id: categoryId
+            }));
+
+            const { error: categoryError } = await supabase
+                .from('asset_categories')
+                .insert(assetCategoryInserts);
+
+            if (categoryError) {
+                console.error('Error linking categories:', categoryError);
+                // Note: Asset is already created, just log the error
+                setMessage({ type: 'warning', text: 'Video uploaded but some categories failed to link.' });
+            } else {
+                setMessage({ type: 'success', text: 'Video uploaded successfully!' });
+            }
 
             // Reset form
             setFormData({
                 file: null,
                 filename: '',
                 status: 'inventory',
-                category: 'FigureIt',
+                selectedCategories: [],
                 title: '',
                 description: '',
                 price: ''
@@ -191,20 +293,94 @@ export default function UploadVideos() {
                             </select>
                         </div>
 
-                        {/* Category */}
+                        {/* Category Multi-Select with Add Option */}
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Category *
+                                Categories *
                             </label>
-                            <input
-                                type="text"
-                                name="category"
-                                value={formData.category}
-                                onChange={handleInputChange}
+
+                            {/* Selected Categories Display */}
+                            {formData.selectedCategories.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mb-2">
+                                    {formData.selectedCategories.map(catId => {
+                                        const category = categories.find(c => c.id === catId);
+                                        return category ? (
+                                            <span
+                                                key={catId}
+                                                className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800"
+                                            >
+                                                {category.category}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeCategory(catId)}
+                                                    className="ml-2 text-blue-600 hover:text-blue-800 font-bold"
+                                                >
+                                                    ×
+                                                </button>
+                                            </span>
+                                        ) : null;
+                                    })}
+                                </div>
+                            )}
+
+                            {/* Category Dropdown */}
+                            <select
+                                onChange={handleCategoryChange}
                                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 disabled={uploading}
-                                required
-                            />
+                                value=""
+                            >
+                                <option value="" disabled>Select categories...</option>
+                                {categories.map((cat) => (
+                                    <option
+                                        key={cat.id}
+                                        value={cat.id}
+                                        disabled={formData.selectedCategories.includes(cat.id)}
+                                    >
+                                        {cat.category} {formData.selectedCategories.includes(cat.id) ? '✓' : ''}
+                                    </option>
+                                ))}
+                                <option value="__add__">+ Add Category</option>
+                            </select>
+
+                            {/* Inline Add Category */}
+                            {showAddCategory && (
+                                <div className="flex mt-2 gap-2">
+                                    <input
+                                        type="text"
+                                        value={newCategory}
+                                        onChange={e => setNewCategory(e.target.value)}
+                                        className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder="New category name"
+                                        disabled={addingCategory}
+                                        autoFocus
+                                        onKeyPress={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                handleAddCategory(e);
+                                            }
+                                        }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleAddCategory}
+                                        disabled={addingCategory}
+                                        className={`px-4 py-2 rounded font-semibold text-white ${addingCategory ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                    >
+                                        {addingCategory ? 'Adding...' : 'Add'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowAddCategory(false);
+                                            setNewCategory('');
+                                        }}
+                                        className="px-4 py-2 rounded font-semibold bg-gray-300 hover:bg-gray-400"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Description */}
@@ -306,3 +482,4 @@ export default function UploadVideos() {
         </div>
     );
 }
+

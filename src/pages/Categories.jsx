@@ -53,6 +53,8 @@ export default function Categories() {
         setSubmitting(true);
 
         try {
+            console.log('Attempting to insert category:', { user_id: user.id, category: newCategory.trim() });
+
             const { data, error } = await supabase
                 .from('categories')
                 .insert({
@@ -60,6 +62,8 @@ export default function Categories() {
                     category: newCategory.trim()
                 })
                 .select();
+
+            console.log('Insert result:', { data, error });
 
             if (error) throw error;
 
@@ -70,6 +74,7 @@ export default function Categories() {
             await fetchCategories();
         } catch (error) {
             console.error('Error creating category:', error);
+            console.error('Error details:', { message: error.message, hint: error.hint, details: error.details });
             setMessage({
                 type: 'error',
                 text: error.message || 'Failed to create category. Please try again.'
@@ -101,8 +106,8 @@ export default function Categories() {
                         type="submit"
                         disabled={submitting}
                         className={`px-6 py-2 rounded font-semibold text-white ${submitting
-                                ? 'bg-gray-400 cursor-not-allowed'
-                                : 'bg-blue-600 hover:bg-blue-700'
+                            ? 'bg-gray-400 cursor-not-allowed'
+                            : 'bg-blue-600 hover:bg-blue-700'
                             }`}
                     >
                         {submitting ? 'Adding...' : 'Add Category'}
@@ -112,8 +117,8 @@ export default function Categories() {
                 {/* Message */}
                 {message.text && (
                     <div className={`mt-4 p-3 rounded ${message.type === 'error'
-                            ? 'bg-red-100 text-red-700 border border-red-300'
-                            : 'bg-green-100 text-green-700 border border-green-300'
+                        ? 'bg-red-100 text-red-700 border border-red-300'
+                        : 'bg-green-100 text-green-700 border border-green-300'
                         }`}>
                         {message.text}
                     </div>

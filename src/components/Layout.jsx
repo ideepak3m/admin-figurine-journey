@@ -15,6 +15,7 @@ const Layout = ({ children }) => {
         { name: 'Create User', path: '/create-user', icon: 'fas fa-user-plus', adminOnly: true },
         { name: 'Upload Images', path: '/upload-images', icon: 'fas fa-image', adminOnly: false },
         { name: 'Upload Videos', path: '/upload-videos', icon: 'fas fa-video', adminOnly: false },
+        { name: 'Manage Assets', path: '/manage-assets', icon: 'fas fa-folder-open', adminOnly: false },
         { name: 'Categories', path: '/categories', icon: 'fas fa-tags', adminOnly: false },
     ];
 

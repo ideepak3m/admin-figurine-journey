@@ -7,6 +7,7 @@ import CreateUser from './pages/CreateUser';
 import UploadImages from './pages/UploadImages';
 import UploadVideos from './pages/UploadVideos';
 import Categories from './pages/Categories';
+import ManageAssets from './pages/ManageAssets';
 import './App.css';
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
             <Route path="/upload-images" element={<UploadImages />} />
             <Route path="/upload-videos" element={<UploadVideos />} />
             <Route path="/categories" element={<Categories />} />
+            <Route path="/manage-assets" element={<ManageAssets />} />
           </Routes>
         </Layout>
       </div>

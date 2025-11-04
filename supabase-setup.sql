@@ -38,6 +38,15 @@ CREATE TABLE IF NOT EXISTS public.categories (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- 2c. Create asset_categories junction table for many-to-many relationship
+CREATE TABLE IF NOT EXISTS public.asset_categories (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    asset_id UUID NOT NULL REFERENCES public.assets(id) ON DELETE CASCADE,
+    category_id UUID NOT NULL REFERENCES public.categories(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    UNIQUE(asset_id, category_id)
+);
+
 -- 3. Create indexes for faster queries
 CREATE INDEX IF NOT EXISTS idx_user_profiles_email ON public.user_profiles(email);
 CREATE INDEX IF NOT EXISTS idx_user_profiles_role ON public.user_profiles(role);
@@ -50,6 +59,8 @@ CREATE INDEX IF NOT EXISTS idx_assets_created_at ON public.assets(created_at DES
 
 CREATE INDEX IF NOT EXISTS idx_categories_user_id ON public.categories(user_id);
 CREATE INDEX IF NOT EXISTS idx_categories_category ON public.categories(category);
+CREATE INDEX IF NOT EXISTS idx_asset_categories_asset_id ON public.asset_categories(asset_id);
+CREATE INDEX IF NOT EXISTS idx_asset_categories_category_id ON public.asset_categories(category_id);
 
 -- 4. Create trigger to auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -98,12 +109,26 @@ CREATE TRIGGER on_auth_user_created
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_new_user();
 
--- 7. Enable Row Level Security (RLS)
+-- 7. Create helper function to check if user is admin (prevents RLS recursion)
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 
+        FROM public.user_profiles
+        WHERE id = auth.uid() 
+        AND role = 'admin'
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 8. Enable Row Level Security (RLS)
 ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.asset_categories ENABLE ROW LEVEL SECURITY;
 
--- 8. Create RLS Policies for user_profiles table
+-- 9. Create RLS Policies for user_profiles table
 
 -- Policy: Users can view their own profile
 CREATE POLICY "Users can view own profile"
@@ -115,25 +140,15 @@ CREATE POLICY "Users can view own profile"
 CREATE POLICY "Admins can view all profiles"
     ON public.user_profiles
     FOR SELECT
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.user_profiles
-            WHERE id = auth.uid() AND role = 'admin'
-        )
-    );
+    USING (public.is_admin());
 
 -- Policy: Admins can update user profiles (for approval)
 CREATE POLICY "Admins can update all profiles"
     ON public.user_profiles
     FOR UPDATE
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.user_profiles
-            WHERE id = auth.uid() AND role = 'admin'
-        )
-    );
+    USING (public.is_admin());
 
--- 9. Create RLS Policies for assets table
+-- 10. Create RLS Policies for assets table
 
 -- Policy: Users can view their own assets
 CREATE POLICY "Users can view own assets"
@@ -145,12 +160,7 @@ CREATE POLICY "Users can view own assets"
 CREATE POLICY "Admins can view all assets"
     ON public.assets
     FOR SELECT
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.user_profiles
-            WHERE id = auth.uid() AND role = 'admin'
-        )
-    );
+    USING (public.is_admin());
 
 -- Policy: Approved users can insert their own assets
 CREATE POLICY "Approved users can insert own assets"
@@ -181,14 +191,9 @@ CREATE POLICY "Users can delete own assets"
 CREATE POLICY "Admins can delete any assets"
     ON public.assets
     FOR DELETE
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.user_profiles
-            WHERE id = auth.uid() AND role = 'admin'
-        )
-    );
+    USING (public.is_admin());
 
--- 10. Create RLS Policies for categories table
+-- 11. Create RLS Policies for categories table
 
 -- Policy: Approved users can view all categories
 CREATE POLICY "Approved users can view all categories"
@@ -212,6 +217,54 @@ CREATE POLICY "Approved users can create categories"
         EXISTS (
             SELECT 1 FROM public.user_profiles
             WHERE id = auth.uid() AND is_approved = TRUE
+        )
+    );
+
+-- 11. Create RLS Policies for asset_categories junction table
+
+-- Policy: Users can view asset-category associations for their own assets
+CREATE POLICY "Users can view own asset categories"
+    ON public.asset_categories
+    FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.assets
+            WHERE assets.id = asset_categories.asset_id 
+            AND assets.user_id = auth.uid()
+        )
+    );
+
+-- Policy: Admins can view all asset-category associations
+CREATE POLICY "Admins can view all asset categories"
+    ON public.asset_categories
+    FOR SELECT
+    TO authenticated
+    USING (public.is_admin());
+
+-- Policy: Users can add categories to their own assets
+CREATE POLICY "Users can add categories to own assets"
+    ON public.asset_categories
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.assets
+            WHERE assets.id = asset_categories.asset_id 
+            AND assets.user_id = auth.uid()
+        )
+    );
+
+-- Policy: Users can remove categories from their own assets
+CREATE POLICY "Users can remove categories from own assets"
+    ON public.asset_categories
+    FOR DELETE
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.assets
+            WHERE assets.id = asset_categories.asset_id 
+            AND assets.user_id = auth.uid()
         )
     );
 
