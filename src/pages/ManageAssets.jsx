@@ -145,10 +145,57 @@ export default function ManageAssets() {
             setMessage({ type: 'success', text: 'Categories updated successfully!' });
             setEditingCategories(false);
             setSelectedCategories([]);
-            await fetchAssets(); // Refresh the list
+            
+            // Refresh the list
+            await fetchAssets();
+            
+            // Update the selected asset with fresh data
+            const updatedAsset = await fetchSingleAsset(selectedAsset.id);
+            if (updatedAsset) {
+                setSelectedAsset(updatedAsset);
+            }
         } catch (error) {
             console.error('Error updating categories:', error);
             setMessage({ type: 'error', text: 'Failed to update categories' });
+        }
+    };
+
+    const fetchSingleAsset = async (assetId) => {
+        try {
+            const { data, error } = await supabase
+                .from('assets')
+                .select(`
+                    *,
+                    asset_categories (
+                        category_id,
+                        categories (
+                            id,
+                            category
+                        )
+                    )
+                `)
+                .eq('id', assetId)
+                .single();
+
+            if (error) throw error;
+
+            // Generate signed URL
+            const urlParts = data.asset_url.split('/');
+            const filePath = urlParts.slice(-2).join('/');
+            const { data: signedData, error: signedError } = await supabase.storage
+                .from('FigureIt_Assets')
+                .createSignedUrl(filePath, 3600);
+
+            return {
+                ...data,
+                asset_url: signedError ? data.asset_url : signedData.signedUrl,
+                categories: data.asset_categories
+                    .map(ac => ac.categories)
+                    .filter(c => c !== null)
+            };
+        } catch (error) {
+            console.error('Error fetching single asset:', error);
+            return null;
         }
     };
 
