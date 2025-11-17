@@ -8,8 +8,12 @@ export default function ManageAssets() {
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedAsset, setSelectedAsset] = useState(null);
-    const [editingCategories, setEditingCategories] = useState(false);
+    const [editingAsset, setEditingAsset] = useState(false);
     const [selectedCategories, setSelectedCategories] = useState([]);
+    const [editTitle, setEditTitle] = useState('');
+    const [editDescription, setEditDescription] = useState('');
+    const [editPrice, setEditPrice] = useState('');
+    const [editStatus, setEditStatus] = useState('available');
     const [message, setMessage] = useState({ type: '', text: '' });
     const [filterType, setFilterType] = useState('all'); // all, image, video
 
@@ -90,10 +94,15 @@ export default function ManageAssets() {
         }
     };
 
-    const handleEditCategories = (asset) => {
+
+    const handleEditAsset = (asset) => {
         setSelectedAsset(asset);
-        setEditingCategories(true);
+        setEditingAsset(true);
         setSelectedCategories(asset.categories.map(c => c.id));
+        setEditTitle(asset.title || '');
+        setEditDescription(asset.description || '');
+        setEditPrice(asset.price !== undefined && asset.price !== null ? asset.price : '');
+        setEditStatus(asset.asset_status || 'available');
         setMessage({ type: '', text: '' });
     };
 
@@ -106,13 +115,24 @@ export default function ManageAssets() {
         });
     };
 
-    const handleSaveCategories = async () => {
-        if (!selectedAsset) return;
 
+    const handleSaveAsset = async () => {
+        if (!selectedAsset) return;
         try {
+            // Update asset fields
+            const { error: updateError } = await supabase
+                .from('assets')
+                .update({
+                    title: editTitle,
+                    description: editDescription,
+                    price: editPrice === '' ? null : Number(editPrice),
+                    asset_status: editStatus
+                })
+                .eq('id', selectedAsset.id);
+            if (updateError) throw updateError;
+
             // Get current category associations
             const currentCategoryIds = selectedAsset.categories.map(c => c.id);
-
             // Determine what to add and remove
             const toAdd = selectedCategories.filter(id => !currentCategoryIds.includes(id));
             const toRemove = currentCategoryIds.filter(id => !selectedCategories.includes(id));
@@ -124,39 +144,34 @@ export default function ManageAssets() {
                     .delete()
                     .eq('asset_id', selectedAsset.id)
                     .in('category_id', toRemove);
-
                 if (deleteError) throw deleteError;
             }
-
             // Add categories
             if (toAdd.length > 0) {
                 const inserts = toAdd.map(categoryId => ({
                     asset_id: selectedAsset.id,
                     category_id: categoryId
                 }));
-
                 const { error: insertError } = await supabase
                     .from('asset_categories')
                     .insert(inserts);
-
                 if (insertError) throw insertError;
             }
 
-            setMessage({ type: 'success', text: 'Categories updated successfully!' });
-            setEditingCategories(false);
+            setMessage({ type: 'success', text: 'Asset updated successfully!' });
+            setEditingAsset(false);
             setSelectedCategories([]);
-            
+
             // Refresh the list
             await fetchAssets();
-            
             // Update the selected asset with fresh data
             const updatedAsset = await fetchSingleAsset(selectedAsset.id);
             if (updatedAsset) {
                 setSelectedAsset(updatedAsset);
             }
         } catch (error) {
-            console.error('Error updating categories:', error);
-            setMessage({ type: 'error', text: 'Failed to update categories' });
+            console.error('Error updating asset:', error);
+            setMessage({ type: 'error', text: 'Failed to update asset' });
         }
     };
 
@@ -429,11 +444,11 @@ export default function ManageAssets() {
                                 {/* Actions */}
                                 <div className="space-y-2">
                                     <button
-                                        onClick={() => handleEditCategories(selectedAsset)}
+                                        onClick={() => handleEditAsset(selectedAsset)}
                                         className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
                                     >
                                         <i className="fas fa-edit mr-2"></i>
-                                        Edit Categories
+                                        Edit
                                     </button>
                                     <button
                                         onClick={() => handleDeleteAsset(selectedAsset)}
@@ -456,59 +471,100 @@ export default function ManageAssets() {
                 </div>
             </div>
 
-            {/* Edit Categories Modal */}
-            {editingCategories && selectedAsset && (
+            {/* Edit Asset Modal */}
+            {editingAsset && selectedAsset && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
                         <div className="p-6">
-                            <h2 className="text-xl font-bold mb-4">Edit Categories</h2>
-                            <p className="text-gray-600 mb-4">Asset: <strong>{selectedAsset.title}</strong></p>
-
-                            {/* Category Checkboxes */}
-                            <div className="space-y-2 mb-6">
-                                {categories.map((cat) => (
-                                    <label
-                                        key={cat.id}
-                                        className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer"
+                            <h2 className="text-xl font-bold mb-4">Edit Asset</h2>
+                            <form onSubmit={e => { e.preventDefault(); handleSaveAsset(); }}>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                                    <input
+                                        type="text"
+                                        value={editTitle}
+                                        onChange={e => setEditTitle(e.target.value)}
+                                        className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        required
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                    <textarea
+                                        value={editDescription}
+                                        onChange={e => setEditDescription(e.target.value)}
+                                        className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        rows={3}
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Price</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={editPrice}
+                                        onChange={e => setEditPrice(e.target.value)}
+                                        className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                                    <select
+                                        value={editStatus}
+                                        onChange={e => setEditStatus(e.target.value)}
+                                        className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedCategories.includes(cat.id)}
-                                            onChange={() => handleToggleCategory(cat.id)}
-                                            className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                                        />
-                                        <span className="ml-2">{cat.category}</span>
-                                    </label>
-                                ))}
-                            </div>
-
-                            {selectedCategories.length === 0 && (
-                                <p className="text-sm text-red-600 mb-4">⚠️ Please select at least one category</p>
-                            )}
-
-                            {/* Modal Actions */}
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={handleSaveCategories}
-                                    disabled={selectedCategories.length === 0}
-                                    className={`flex-1 px-4 py-2 rounded font-semibold text-white ${selectedCategories.length === 0
-                                        ? 'bg-gray-400 cursor-not-allowed'
-                                        : 'bg-blue-600 hover:bg-blue-700'
-                                        }`}
-                                >
-                                    Save Changes
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        setEditingCategories(false);
-                                        setSelectedCategories([]);
-                                        setMessage({ type: '', text: '' });
-                                    }}
-                                    className="px-4 py-2 bg-gray-300 rounded font-semibold hover:bg-gray-400"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
+                                        <option value="available">Available</option>
+                                        <option value="sold">Sold</option>
+                                    </select>
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Categories</label>
+                                    <div className="space-y-2">
+                                        {categories.map((cat) => (
+                                            <label
+                                                key={cat.id}
+                                                className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedCategories.includes(cat.id)}
+                                                    onChange={() => handleToggleCategory(cat.id)}
+                                                    className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                                />
+                                                <span className="ml-2">{cat.category}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                                {selectedCategories.length === 0 && (
+                                    <p className="text-sm text-red-600 mb-4">⚠️ Please select at least one category</p>
+                                )}
+                                <div className="flex gap-3 mt-4">
+                                    <button
+                                        type="submit"
+                                        disabled={selectedCategories.length === 0 || !editTitle}
+                                        className={`flex-1 px-4 py-2 rounded font-semibold text-white ${selectedCategories.length === 0 || !editTitle
+                                            ? 'bg-gray-400 cursor-not-allowed'
+                                            : 'bg-blue-600 hover:bg-blue-700'
+                                            }`}
+                                    >
+                                        Save Changes
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setEditingAsset(false);
+                                            setSelectedCategories([]);
+                                            setMessage({ type: '', text: '' });
+                                        }}
+                                        className="px-4 py-2 bg-gray-300 rounded font-semibold hover:bg-gray-400"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 </div>
