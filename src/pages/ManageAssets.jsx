@@ -13,6 +13,7 @@ export default function ManageAssets() {
     const [editTitle, setEditTitle] = useState('');
     const [editDescription, setEditDescription] = useState('');
     const [editPrice, setEditPrice] = useState('');
+    const [editDiscountedPrice, setEditDiscountedPrice] = useState('');
     const [editStatus, setEditStatus] = useState('available');
     const [message, setMessage] = useState({ type: '', text: '' });
     const [filterType, setFilterType] = useState('all'); // all, image, video
@@ -102,6 +103,7 @@ export default function ManageAssets() {
         setEditTitle(asset.title || '');
         setEditDescription(asset.description || '');
         setEditPrice(asset.price !== undefined && asset.price !== null ? asset.price : '');
+        setEditDiscountedPrice(asset.discounted_price !== undefined && asset.discounted_price !== null ? asset.discounted_price : '');
         setEditStatus(asset.asset_status || 'available');
         setMessage({ type: '', text: '' });
     };
@@ -126,6 +128,7 @@ export default function ManageAssets() {
                     title: editTitle,
                     description: editDescription,
                     price: editPrice === '' ? null : Number(editPrice),
+                    discounted_price: editDiscountedPrice === '' ? null : Number(editDiscountedPrice),
                     asset_status: editStatus
                 })
                 .eq('id', selectedAsset.id);
@@ -315,6 +318,7 @@ export default function ManageAssets() {
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categories</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Disc. Price</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                                     </tr>
                                 </thead>
@@ -357,7 +361,12 @@ export default function ManageAssets() {
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                                {asset.price ? `$${asset.price}` : '-'}
+                                                {asset.price ? `$${Number(asset.price).toFixed(2)}` : '-'}
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                                {asset.discounted_price ? (
+                                                    <span className="text-red-600 font-semibold">${Number(asset.discounted_price).toFixed(2)}</span>
+                                                ) : '-'}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500">
                                                 {new Date(asset.created_at).toLocaleDateString()}
@@ -416,7 +425,13 @@ export default function ManageAssets() {
                                     {selectedAsset.price && (
                                         <div className="flex justify-between text-sm">
                                             <span className="text-gray-500">Price:</span>
-                                            <span className="font-semibold">${selectedAsset.price}</span>
+                                            <span className="font-semibold">${Number(selectedAsset.price).toFixed(2)}</span>
+                                        </div>
+                                    )}
+                                    {selectedAsset.discounted_price && (
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-gray-500">Discounted Price:</span>
+                                            <span className="font-semibold text-red-600">${Number(selectedAsset.discounted_price).toFixed(2)}</span>
                                         </div>
                                     )}
                                     <div className="flex justify-between text-sm">
@@ -505,6 +520,17 @@ export default function ManageAssets() {
                                         step="0.01"
                                         value={editPrice}
                                         onChange={e => setEditPrice(e.target.value)}
+                                        className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Discounted Price</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={editDiscountedPrice}
+                                        onChange={e => setEditDiscountedPrice(e.target.value)}
                                         className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
